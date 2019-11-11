@@ -1,0 +1,36 @@
+---
+title: "Make a BGP map Notebook"
+output: 
+  html_notebook:
+    toc: true
+---
+
+
+## Packages Needed
+
+### Non-standard Packages
+
+This work draws on a few functions that I have in packages that I have up on GitHub,
+namely:
+
+1. **my fork** of `tess3r`.  Note that you can't use the default version of `tess3r`,
+you have to use my fork of it, which has some extra functionality.
+2. my package `genoscapeRtools`
+
+Get those packages like this:
+```{r, eval=FALSE}
+remotes::install_github("eriqande/TESS3_encho_sen")  # for special version of tess3r
+remotes::install_github("eriqande/genoscapeRtools")  # for Eric's genoscapeRtools
+```
+
+### Standard Packages
+
+The rest of the packages you need can be downloaded from CRAN.  If you don't have
+them you should get them: `raster`, `sf`, `tidyverse`. The last one there gets ggplot2
+and a number of other packages by Hadley Wickham.
+
+You can get those like this:
+```{r, eval=FALSE}
+install.packages(c("raster", "sf", "tidyverse"))
+```
+
