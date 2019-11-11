@@ -1,10 +1,24 @@
 ---
 title: "Make a BGP map Notebook"
+author: "Eric C. Anderson"
 output: 
   html_notebook:
     toc: true
 ---
 
+## Overview
+
+This chronicles the steps taken whilst making a genoscape for Willow Flycatchers.
+The order in which we discuss building up this map is different from the order in whic
+we put layers down to actually make the map. Here, we will start with making the
+genoscape, which is actually the part that sits atop the whole map.  But we do that
+because that is the part that will actually change from species to species, and we 
+want everyone to be relatively fresh for understanding those mutable parts.  Once the
+genoscape is dealt with, we will then talk about the next layer of country and state
+boundaries, and also coastline polygons.  We do this, because it doesn't take too long
+to plot these features, and using them is a good way to figure out the desired extent of
+your map and to decide upon a projection.  Finally, we will talk about the bottom
+layer of the map, which is the raster with earthforms and shading from Natural Earth Data.
 
 ## Packages Needed
 
@@ -26,11 +40,247 @@ remotes::install_github("eriqande/genoscapeRtools")  # for Eric's genoscapeRtool
 ### Standard Packages
 
 The rest of the packages you need can be downloaded from CRAN.  If you don't have
-them you should get them: `raster`, `sf`, `tidyverse`. The last one there gets ggplot2
+them you should get them: `raster`, `sf`, `fields`, `downloader`, and `tidyverse`. The last one there gets ggplot2
 and a number of other packages by Hadley Wickham.
 
 You can get those like this:
 ```{r, eval=FALSE}
-install.packages(c("raster", "sf", "tidyverse"))
+install.packages(c("raster", "sf", "tidyverse", "fields". "downloader"))
 ```
 
+### Load the Packages We will work with
+
+```{r, comment=FALSE, warning=FALSE, message=FALSE}
+library(raster)  # important to load before tidyverse, otherwise it masks select()
+library(tidyverse)
+library(sf)
+library(ggspatial)
+```
+
+## Making the genoscape
+
+The genoscape are the bright colors smeared across space that show where different
+genetically identfiable groups of birds reside on the breeding grounds.  These genoscapes
+are stored as rasters, and transparency is used to indicate how much confidence one has
+in the genetic identification of individuals in different areas.  These rasters are made
+by interpolating Q-values from a program like STRUCTURE or ADMIXTURE between individuals
+that were sampled in space. 
+
+### Input Data
+
+#### Breeding bird Q-values
+We need a matrix of Q-values for individuals.  We have one that we will read in as a
+tibble
+```{r, message=FALSE}
+Q_tibble <- read_table2("inputs/breeding-bird-Q-values.txt")
+Q_tibble
+```
+
+Column `id` is the sample name and the rest are ancestry fractions to different clusters
+(named with three characters) estimated by STRUCTURE.
+
+#### Breeding Bird Lat-Longs
+We also need to know where those individuals were sampled in space. We have that here:
+```{r, message=FALSE}
+LatLong_tibble <- read_tsv("inputs/breeding-bird-lat-longs.tsv")
+LatLong_tibble
+```
+
+#### Breeding Bird Cluster Colors
+
+The Q-values correspond to different clusters, as shown above.  We must specify
+the colors that we wish to assign to each of those clusters.  We do that with a named
+vector like this:
+```{r}
+cluster_colors <-  c(
+  INW = "#984ea3",
+  EST = "#377eb8",
+  PNW = "#4daf4a",
+  SSW = "#ff7f00",
+  SCC = "#ffff33",
+  KER = "#e41a1c",
+  WMT = "#00ffff"
+) 
+```
+
+For fun, we can plot these to see what they look like:
+```{r}
+enframe(cluster_colors) %>%
+  mutate(x = 1:n(),
+         y = 1:n()) %>%
+  ggplot(aes(x = x, y = y, fill = name)) +
+  geom_point(pch = 21, size = 12) +
+  scale_fill_manual(values = cluster_colors)
+```
+
+#### Breeding Bird Shapefile
+
+Finally, we need to have a GIS Shapefile that tells us the range of the breeding
+birds, so that genoscape can be clipped properly.  We read this shapefile with the 
+`st_read()` function from package `sf`.
+```{r, results='hide'}
+breeding_range <- st_read("inputs/wifl-shapefiles-revised/WIFLrev.shp")
+```
+
+For grins, we can plot those polygons to see what they look like:
+```{r}
+ggplot(breeding_range) + 
+  geom_sf() +
+  theme_bw()
+```
+
+
+### Preparing the data for tess3Q_map_rasters
+
+Within Eric's fork of `tess3r` is a function called `tess3Q_map_rasters`.  It
+takes input from the objects we have above, but it takes that input as 
+matrices rather than data frames, etc. so there is a little finagling to be done.
+
+#### First, make sure the lat longs are in the correct order and arrangement
+
+We need to ensure that we have values for birds in the right order (a job for a` left_join`), and we
+also have to make it a matrix with Longitude in the first column and Lat in the
+second. 
+```{r}
+long_lat_tibble <- Q_tibble %>%
+  select(id) %>%
+  left_join(LatLong_tibble, by = "id") %>%
+  select(Long, Lat) 
+
+long_lat_matrix <- long_lat_tibble %>%
+  as.matrix()
+```
+
+#### Then, make a matrix of the Q values
+
+Pull off the names of individuals and make a matrix of it:
+```{r}
+Q_matrix <- Q_tibble %>%
+  select(-id) %>%
+  as.matrix()
+```
+
+### Interpolate the Q-values by Kriging
+
+For this, we use the above variables in `tess3r::tess3Q_map_rasters()`.  Note that
+use namespace addressing for this function rather than load the `tess3r`
+```{r}
+genoscape_brick <- tess3r::tess3Q_map_rasters(
+  x = Q_matrix, 
+  coord = long_lat_matrix,  
+  map.polygon = breeding_range,
+  window = extent(breeding_range)[1:4],
+  resolution = c(300,300), # if you want more cells in your raster, set higher
+  # this next lines need to to be here, but don't do much...
+  col.palette = tess3r::CreatePalette(cluster_colors, length(cluster_colors)), 
+  method = "map.max", 
+  interpol = tess3r::FieldsKrigModel(10),  
+  main = "Ancestry coefficients",
+  xlab = "Longitude", 
+  ylab = "Latitude", 
+  cex = .4
+)
+
+# after that, we need to add names of the clusters back onto this raster brick
+names(genoscape_brick) <- names(Q_tibble)[-1]
+```
+
+That gives us a raster brick of Q-values associated with each cell in the raster, but
+those values are not always constrained between 0 and 1, so we have to massage them 
+a little bit in the next section.
+
+### Scaling and cleaning the genoscape_brick
+
+For this we use the function `genoscapeRtools::qprob_rando_raster()`.  This sets
+the colors between clusters to something reasonable and scales things so that the
+color in each cluster is opaque at the highest value within the clusters, etc.
+See `?genoscapeRtools::qprob_rando_raster` to learn about the scaling options, etc.
+
+This will squash the raster brick with one element for each cluster down to a single
+RGBA raster brick.
+```{r}
+genoscape_rgba <- genoscapeRtools::qprob_rando_raster(
+  TRB = genoscape_brick,
+  cols = cluster_colors, 
+  alpha_scale = 2.0, 
+  abs_thresh = 0.0, 
+  alpha_exp = 1.55, 
+  alpha_chop_max = 230
+)
+
+# at this point, we must be explicit about adding a projection to the raster.
+# This adds the info for a regular lat-long projection
+crs(genoscape_rgba) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+```
+
+We can easily plot this with the function `layer_spatial` from the `ggspatial` package:
+```{r}
+ggplot() + 
+  ggspatial::layer_spatial(genoscape_rgba) + 
+  theme_bw() +
+  coord_sf()
+```
+
+Note that if we wanted to add the actual sampling points to this (that are given
+in `long_lat_tibble`), we can use ggspatial's `geom_spatial_point()` function.
+```{r}
+ggplot() + 
+  layer_spatial(genoscape_rgba) + 
+  geom_spatial_point(data = long_lat_tibble, mapping = aes(x = Long, y = Lat)) + 
+  theme_bw() +
+  coord_sf()
+```
+
+It would probably be better to jigger those points a little bit.  That could be done by mutating
+each of them a random bit away.
+
+## Coastlines, Countries, States, and Provinces
+
+Since we will be using the Natural Earth Data Set for the raster background of our map,
+we will also use the Natural Earth lines and polygons.  The Natural Earth data set is
+an amazing, open-source resource for making beautiful maps.  Check it out at
+[naturalearthdata.com](https://www.naturalearthdata.com/).  
+
+For coastlines, countries, and states/provinces, you will need to download
+three different shape files.  We will be working with the highest resolution
+Natural Earth data sets which are the `10m` versions.  Download and unzip them
+to a directory within this project called `ne_shapefiles`.  You can do that
+with R like this:
+```{r, eval=FALSE}
+dir.create("ne_shapefiles", showWarnings = FALSE)
+
+tmpfile <- tempfile()
+downloader::download(
+  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/physical/ne_10m_coastline.zip",
+  dest = tmpfile
+)
+unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
+```
+
+We do the same for country boundaries, and then state/province boundaries, too:
+```{r, eval=FALSE}
+# country boundaries
+tmpfile <- tempfile()
+downloader::download(
+  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/cultural/ne_10m_admin_0_boundary_lines_land.zip",
+  dest = tmpfile
+)
+unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
+
+
+# state and province boundaries
+# country boundaries
+tmpfile <- tempfile()
+downloader::download(
+  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/cultural/ne_10m_admin_1_states_provinces.zip",
+  dest = tmpfile
+)
+unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
+```
+
+
+## Session Info
+
+```{r}
+sessioninfo::session_info()
+```
