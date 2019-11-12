@@ -419,11 +419,70 @@ big_one
 ```
 
 Seeing at sort of small on the screen does not really do justice to it.  You can `ggsave` it
-in whatever size is desired.
+in whatever size is desired.  For whatever the final product is going to be, you will
+want to mess with the line thickness on those country and state borders...
 
-I might update this shortly with strategies to cut out a rectangle from this so that
-it doesn't have the conic appearance.
+## Clipping a rectangle out of that
 
+While that looks nice, some people, like Kristen, might prefer to have the
+background part there in a rectangle, rather than a conic surface.  We might
+be able to do that be determining the xlim and ylim to `coord_sf()`.  But, note that
+we have to do that in terms of the units that the Lambert projection is referring to.
+
+So, imagine that we want to chop out a rectangle from Haida Gwai, off the coast of
+British Columbia, straight down and straight across to the right (on the image).
+And we would want the bottom and right sides determined by a point in the bottom
+right that has the y-value of the tip of Florida, and an x-value which is essentially
+at St. John, New Brunswick.  Then, we need to determine the x and y coordinates of those
+points.
+
+```{r}
+# Here are lat longs for those points
+pts <- tribble(
+  ~place, ~long, ~lat,
+  "HaidaGwai", -132.3143526, 53.7298050,
+  "FloridaTip", -80.8032237, 25.0909780, 
+  "St.Johns",  -65.943453, 45.291222
+)
+
+# here we turn that into an sf object
+pts_sf <- st_as_sf(pts, coords = c("long", "lat"), 
+                   crs = 4326)  # 4326 is shorthand for "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+
+# and now we transform it to lambert
+pts_lambert <- st_transform(pts_sf, crs = lamproj)
+
+# and it is stupid how it prints in the notebook, so
+# just note the values:
+st_as_text(pts_lambert$geometry)
+```
+
+That means we want xlim = c(-2010114, 2452877) and ylim = c(-1366911, 1821869).
+Let's try that:
+```{r}
+rectangled <- ggplot() +
+  ggspatial::layer_spatial(hypso_cropped) +
+  geom_sf(data = countries_cropped, fill = NA, size = 0.4) +
+  geom_sf(data = states_cropped, fill = NA, size = 0.3) +
+  ggspatial::layer_spatial(genoscape_rgba) +
+  theme_bw() + 
+  coord_sf(
+    crs = st_crs(lamproj), 
+    xlim = c(-2010114, 2452877), 
+    ylim = c(-1366911, 1821869),
+    expand = FALSE)
+
+rectangled
+```
+
+Okay, that does it.  In reality, you could want to expand the original domain
+and then cut stuff off, leaving a little more room.  
+
+## A final note
+
+If you want to add more elements to the figure you can do so by giving them
+a lat-long and then putting them there using geom_sf().  It all fits nicely
+into the ggplot framework.
 
 ## Session Info
 

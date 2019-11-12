@@ -26,6 +26,7 @@ others
 To follow along with this process, clone this repository and follow
 the steps and explanation in `Make-a-BGP-map-Notebook.Rmd`.  If you want to see 
 what that notebook looks like in html, you can visit it at
+[https://eriqande.github.io/make-a-BGP-map/Make-a-BGP-map-Notebook.nb.html](https://eriqande.github.io/make-a-BGP-map/Make-a-BGP-map-Notebook.nb.html).
 
 ```{r wiwa, echo=FALSE, fig.cap="Wilson's Warbler Genoscape from Ruegg et al. 2013", out.width = '90%'}
 knitr::include_graphics("img/wiwa-genoscape.png")

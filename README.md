@@ -20,8 +20,8 @@ this is an update to BGP map-making using packages ‘sf’, ‘ggplot2’,
 ‘ggspatial’, and a handful of others
 
 To follow along with this process, clone this repository and follow the
-steps and explanation in `001-make-a-BGP-map.Rmd`. If you want to see
-what that notebook looks like in html, you can visit it
-at
+steps and explanation in `Make-a-BGP-map-Notebook.Rmd`. If you want to
+see what that notebook looks like in html, you can visit it at
+<https://eriqande.github.io/make-a-BGP-map/Make-a-BGP-map-Notebook.nb.html>.
 
 <img src="img/wiwa-genoscape.png" title="Wilson's Warbler Genoscape from Ruegg et al. 2013" alt="Wilson's Warbler Genoscape from Ruegg et al. 2013" width="90%" />
