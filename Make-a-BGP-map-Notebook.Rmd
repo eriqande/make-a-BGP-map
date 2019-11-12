@@ -8,6 +8,11 @@ output:
 
 ## Overview
 
+To work through this, clone the repository (an RStudio project) at
+[https://github.com/eriqande/make-a-BGP-map](https://github.com/eriqande/make-a-BGP-map) to
+get all the necessary input files, etc.  Then open up the RStudio project and run
+though `Make-a-BGP-map-Notebook.Rmd`.
+
 This chronicles the steps taken whilst making a genoscape for Willow Flycatchers.
 The order in which we discuss building up this map is different from the order in whic
 we put layers down to actually make the map. Here, we will start with making the
@@ -193,7 +198,7 @@ a little bit in the next section.
 
 For this we use the function `genoscapeRtools::qprob_rando_raster()`.  This sets
 the colors between clusters to something reasonable and scales things so that the
-color in each cluster is opaque at the highest value within the clusters, etc.
+color in each cluster is at maximum opacity at the highest value within the clusters, etc.
 See `?genoscapeRtools::qprob_rando_raster` to learn about the scaling options, etc.
 
 This will squash the raster brick with one element for each cluster down to a single
@@ -241,6 +246,8 @@ we will also use the Natural Earth lines and polygons.  The Natural Earth data s
 an amazing, open-source resource for making beautiful maps.  Check it out at
 [naturalearthdata.com](https://www.naturalearthdata.com/).  
 
+### Downloading the shapefiles
+
 For coastlines, countries, and states/provinces, you will need to download
 three different shape files.  We will be working with the highest resolution
 Natural Earth data sets which are the `10m` versions.  Download and unzip them
@@ -257,7 +264,9 @@ downloader::download(
 unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
 ```
 
-We do the same for country boundaries, and then state/province boundaries, too:
+We do the same for country boundaries, and then state/province boundaries, too.  Note, in both cases
+we just want to get the boundary lines that are internal to the coast.  Otherwise you get
+a think line around the coast that is not so great...
 ```{r, eval=FALSE}
 # country boundaries
 tmpfile <- tempfile()
@@ -272,11 +281,148 @@ unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
 # country boundaries
 tmpfile <- tempfile()
 downloader::download(
-  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/cultural/ne_10m_admin_1_states_provinces.zip",
+  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/cultural/ne_10m_admin_1_states_provinces_lines.zip",
   dest = tmpfile
 )
 unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
 ```
+
+### Plot the Coastlines and estimate where we want to clip
+
+First read it in:
+```{r}
+coastlines <- st_read("ne_shapefiles/ne_10m_coastline.shp")
+```
+Now, let's just crop out the part that we want.  This is somewhat key:
+right here we will define the extent in lat-long of the region that
+we want to plot:
+```{r}
+# note! it is important to put the elements of domain in this 
+# order, because the function faster::extent() is expecting thing
+# to be in this order, and doesn't parse the names of the vectors
+# the way sf::st_crop() does.
+domain <- c(
+  xmin = -135, 
+  xmax = -60,
+  ymin = 22,
+  ymax = 60
+)
+
+coast_cropped <- st_crop(coastlines, domain)
+
+```
+
+Then plot the cropped part:
+```{r}
+ggplot(coast_cropped) + 
+  geom_sf() +
+  coord_sf()
+```
+
+### All the lines, plus the genoscape
+
+OK, that was pretty reasonable.  Now crop all the lines to `domain` and plot
+them, and put the genoscape on top of that, too.
+```{r}
+countries_cropped <-  st_read("ne_shapefiles/ne_10m_admin_0_boundary_lines_land.shp") %>%
+  st_crop(domain)
+states_cropped <- st_read("ne_shapefiles/ne_10m_admin_1_states_provinces_lines.shp") %>%
+  st_crop(domain)
+```
+
+Now, plot it all.  Notice we do it by just adding layers.
+```{r}
+mapg <- ggplot() +
+  geom_sf(data = coast_cropped) +
+  geom_sf(data = countries_cropped, fill = NA) +
+  geom_sf(data = states_cropped, fill = NA) +
+  ggspatial::layer_spatial(genoscape_rgba) +
+  theme_bw() 
+
+# now plot it under default lat-long projection
+mapg +
+  coord_sf() 
+```
+
+That is looking like it should, but the projection is pretty ugly.  In the next section
+we will consider projection.
+
+## Projecting
+
+The new version of ggplot makes it super easy to project everything on the fly
+by passing the projection to `coord_sf()`.   For things in North America,
+it seems that a Lambert conic project does a nice job of keeping British Columbia
+and Alaska from looking way too big. We can define such a projection with a string, like
+this:
+```{r}
+lamproj <- "+proj=lcc +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-100 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"
+```
+
+Now, let's see how our developing map looks under such a projection.  We just define `lamproj` as 
+a coordinate reference system and pass it in to `coord_sf()`:
+```{r}
+mapg +
+  coord_sf(crs = st_crs(lamproj))
+```
+
+I would call that decidedly better.
+
+## The pretty-map background
+
+Now, all that remains is to put all of this on top of a nicely tinted map that
+shows landforms and things.  Note that once we have such a layer under the rest of this
+stuff, we will probably omit the coastline layer, since it gets a little dark where the
+coastline is highly dissected.
+
+### Downloading Natural Earth rasters
+
+I am going to recommed that you get the hypsometrically tinted Natural Earth map with
+water bodies and rivers on it, and you might as well get the one that has some ocean 
+basin coloring too.  We will put it into a directory in the project called
+`ne_rasters`.  Note, this expands to about half a gig of data.
+```{r}
+dir.create("ne_rasters", showWarnings = FALSE)
+
+tmpfile <- tempfile()
+downloader::download(
+  url = "https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/raster/HYP_HR_SR_OB_DR.zip",
+  dest = tmpfile
+)
+unzip(zipfile = tmpfile, exdir = "ne_rasters")
+```
+
+
+### Read in the raster and crop it
+
+Reading a large raster in with the raster package does not take up much
+memory, because it leaves it on disk.  So we will open a connection to
+the big, massive raster using the `brick` function from the `raster` package
+and then crop it:
+```{r}
+hypso <- brick("ne_rasters/HYP_HR_SR_OB_DR/HYP_HR_SR_OB_DR.tif")
+hypso_cropped <- crop(hypso, extent(domain)) 
+```
+
+Now, we just add `hypso_cropped` in with `ggspatial::spatial_layer()` below all of our
+other layers (dropping the coastlines), and we might make country and state lines thinner (and different sizes)
+and gray:
+```{r}
+big_one <- ggplot() +
+  ggspatial::layer_spatial(hypso_cropped) +
+  geom_sf(data = countries_cropped, fill = NA, size = 0.4) +
+  geom_sf(data = states_cropped, fill = NA, size = 0.3) +
+  ggspatial::layer_spatial(genoscape_rgba) +
+  theme_bw() + 
+  coord_sf(crs = st_crs(lamproj))
+
+big_one
+```
+
+Seeing at sort of small on the screen does not really do justice to it.  You can `ggsave` it
+in whatever size is desired.
+
+I might update this shortly with strategies to cut out a rectangle from this so that
+it doesn't have the conic appearance.
 
 
 ## Session Info
