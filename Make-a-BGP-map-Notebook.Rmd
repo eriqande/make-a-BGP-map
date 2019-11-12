@@ -13,8 +13,8 @@ To work through this, clone the repository (an RStudio project) at
 get all the necessary input files, etc.  Then open up the RStudio project and run
 though `Make-a-BGP-map-Notebook.Rmd`.
 
-This chronicles the steps taken whilst making a genoscape for Willow Flycatchers.
-The order in which we discuss building up this map is different from the order in whic
+This chronicles the steps taken whilst making a genoscape for willow flycatchers.
+The order in which we discuss building up this map is different from the order in which
 we put layers down to actually make the map. Here, we will start with making the
 genoscape, which is actually the part that sits atop the whole map.  But we do that
 because that is the part that will actually change from species to species, and we 
@@ -50,7 +50,7 @@ and a number of other packages by Hadley Wickham.
 
 You can get those like this:
 ```{r, eval=FALSE}
-install.packages(c("raster", "sf", "tidyverse", "fields". "downloader"))
+install.packages(c("raster", "sf", "tidyverse", "fields", "downloader"))
 ```
 
 ### Load the Packages We will work with
@@ -64,8 +64,8 @@ library(ggspatial)
 
 ## Making the genoscape
 
-The genoscape are the bright colors smeared across space that show where different
-genetically identfiable groups of birds reside on the breeding grounds.  These genoscapes
+The genoscape can be thought of as the bright colors smeared across space that show where different
+genetically identifiable groups of birds reside on the breeding grounds.  These genoscapes
 are stored as rasters, and transparency is used to indicate how much confidence one has
 in the genetic identification of individuals in different areas.  These rasters are made
 by interpolating Q-values from a program like STRUCTURE or ADMIXTURE between individuals
@@ -167,8 +167,9 @@ Q_matrix <- Q_tibble %>%
 
 ### Interpolate the Q-values by Kriging
 
-For this, we use the above variables in `tess3r::tess3Q_map_rasters()`.  Note that
-use namespace addressing for this function rather than load the `tess3r`
+For this, we use the above variables in `tess3r::tess3Q_map_rasters()`.  Note the
+use of namespace addressing for this function rather than loading the whole `tess3r` package
+with the `library()` command.
 ```{r}
 genoscape_brick <- tess3r::tess3Q_map_rasters(
   x = Q_matrix, 
@@ -196,13 +197,15 @@ a little bit in the next section.
 
 ### Scaling and cleaning the genoscape_brick
 
-For this we use the function `genoscapeRtools::qprob_rando_raster()`.  This sets
-the colors between clusters to something reasonable and scales things so that the
-color in each cluster is at maximum opacity at the highest value within the clusters, etc.
-See `?genoscapeRtools::qprob_rando_raster` to learn about the scaling options, etc.
+For this we use the function `genoscapeRtools::qprob_rando_raster()`.  This takes the raster
+brick that comes out of tess3Q_map_rasters() and does some rescaling and (maybe) some random sampling
+to return a raster of colors that I hope will do a reliable job of representing (in some way) predicted
+assignment accuracy over space.
+See `?genoscapeRtools::qprob_rando_raster` to learn about the scaling options, etc. (However, I am
+not convinced that all of those options are reliably estimated.)
 
-This will squash the raster brick with one element for each cluster down to a single
-RGBA raster brick.
+This will squash the raster brick down to a single
+RGBA (i.e., four channels, red, green, blue and alpha) raster brick.
 ```{r}
 genoscape_rgba <- genoscapeRtools::qprob_rando_raster(
   TRB = genoscape_brick,
@@ -265,8 +268,8 @@ unzip(zipfile = tmpfile, exdir = "ne_shapefiles")
 ```
 
 We do the same for country boundaries, and then state/province boundaries, too.  Note, in both cases
-we just want to get the boundary lines that are internal to the coast.  Otherwise you get
-a think line around the coast that is not so great...
+we just want to get the boundary lines that are internal to the coast.  Otherwise you can end up getting
+a thick line around the coast that is not so great...
 ```{r, eval=FALSE}
 # country boundaries
 tmpfile <- tempfile()
@@ -298,7 +301,7 @@ right here we will define the extent in lat-long of the region that
 we want to plot:
 ```{r}
 # note! it is important to put the elements of domain in this 
-# order, because the function faster::extent() is expecting thing
+# order, because the function raster::extent() is expecting thing
 # to be in this order, and doesn't parse the names of the vectors
 # the way sf::st_crop() does.
 domain <- c(
@@ -349,9 +352,9 @@ we will consider projection.
 
 ## Projecting
 
-The new version of ggplot makes it super easy to project everything on the fly
+The new version of `ggplot2` makes it super easy to project everything on the fly
 by passing the projection to `coord_sf()`.   For things in North America,
-it seems that a Lambert conic project does a nice job of keeping British Columbia
+it seems that a Lambert conic projection does a nice job of keeping British Columbia
 and Alaska from looking way too big. We can define such a projection with a string, like
 this:
 ```{r}
@@ -404,13 +407,12 @@ hypso_cropped <- crop(hypso, extent(domain))
 ```
 
 Now, we just add `hypso_cropped` in with `ggspatial::spatial_layer()` below all of our
-other layers (dropping the coastlines), and we might make country and state lines thinner (and different sizes)
-and gray:
+other layers (dropping the coastlines), and we might make country and state lines thinner (and different sizes):
 ```{r}
 big_one <- ggplot() +
   ggspatial::layer_spatial(hypso_cropped) +
-  geom_sf(data = countries_cropped, fill = NA, size = 0.4) +
-  geom_sf(data = states_cropped, fill = NA, size = 0.3) +
+  geom_sf(data = countries_cropped, fill = NA, size = 0.15) +
+  geom_sf(data = states_cropped, fill = NA, size = 0.1) +
   ggspatial::layer_spatial(genoscape_rgba) +
   theme_bw() + 
   coord_sf(crs = st_crs(lamproj))
@@ -418,23 +420,25 @@ big_one <- ggplot() +
 big_one
 ```
 
-Seeing at sort of small on the screen does not really do justice to it.  You can `ggsave` it
+Seeing that sort of small on the screen does not really do justice to it.  You can `ggsave` it
 in whatever size is desired.  For whatever the final product is going to be, you will
 want to mess with the line thickness on those country and state borders...
 
 ## Clipping a rectangle out of that
 
-While that looks nice, some people, like Kristen, might prefer to have the
-background part there in a rectangle, rather than a conic surface.  We might
-be able to do that be determining the xlim and ylim to `coord_sf()`.  But, note that
-we have to do that in terms of the units that the Lambert projection is referring to.
+While that looks nice, most people might prefer to have the
+background part there in a rectangle, rather than a conic surface.  We can
+do that by setting the xlim and ylim to `coord_sf()`.  But, note that
+we have to do that in terms of the units that the Lambert projection is referring to,
+not just in simple lat-long coordinates (i.e. we have to project those too!)
 
 So, imagine that we want to chop out a rectangle from Haida Gwai, off the coast of
 British Columbia, straight down and straight across to the right (on the image).
 And we would want the bottom and right sides determined by a point in the bottom
 right that has the y-value of the tip of Florida, and an x-value which is essentially
 at St. John, New Brunswick.  Then, we need to determine the x and y coordinates of those
-points.
+points under our Lambert conformal conic projection.  We do that by making a simple features
+tibble of the lat-longs for those points and then projecting it.
 
 ```{r}
 # Here are lat longs for those points
@@ -452,7 +456,13 @@ pts_sf <- st_as_sf(pts, coords = c("long", "lat"),
 # and now we transform it to lambert
 pts_lambert <- st_transform(pts_sf, crs = lamproj)
 
-# and it is stupid how it prints in the notebook, so
+# when we print it in a notebook, we can see that the geometry is a list
+# column, but can't see the values:
+pts_lambert
+```
+
+So, for you to be able to see the values we can just print it like this:
+```{r}
 # just note the values:
 st_as_text(pts_lambert$geometry)
 ```
@@ -462,26 +472,28 @@ Let's try that:
 ```{r}
 rectangled <- ggplot() +
   ggspatial::layer_spatial(hypso_cropped) +
-  geom_sf(data = countries_cropped, fill = NA, size = 0.4) +
-  geom_sf(data = states_cropped, fill = NA, size = 0.3) +
+  geom_sf(data = countries_cropped, fill = NA, size = 0.15) +
+  geom_sf(data = states_cropped, fill = NA, size = 0.1) +
   ggspatial::layer_spatial(genoscape_rgba) +
   theme_bw() + 
   coord_sf(
     crs = st_crs(lamproj), 
     xlim = c(-2010114, 2452877), 
     ylim = c(-1366911, 1821869),
-    expand = FALSE)
+    expand = FALSE)  # expand = FALSE means put the axes right at the xlim and ylim
 
 rectangled
 ```
 
-Okay, that does it.  In reality, you could want to expand the original domain
-and then cut stuff off, leaving a little more room.  
+Okay, that does it.  In reality, you would probably want to expand the original `domain`
+to be a bigger chunk of the earth, so that when you cut stuff off there was more left...
+
 
 ## A final note
 
 If you want to add more elements to the figure you can do so by giving them
-a lat-long and then putting them there using geom_sf().  It all fits nicely
+a lat-long and making a simple features tibble out of it and then putting them
+there using geom_sf().  It all fits nicely
 into the ggplot framework.
 
 ## Session Info
