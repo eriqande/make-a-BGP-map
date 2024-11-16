@@ -77,7 +77,7 @@ that were sampled in space.
 We need a matrix of Q-values for individuals.  We have one that we will read in as a
 tibble
 ```{r, message=FALSE}
-Q_tibble <- read_table2("inputs/breeding-bird-Q-values.txt")
+Q_tibble <- read_table("inputs/breeding-bird-Q-values.txt")
 Q_tibble
 ```
 
@@ -219,6 +219,9 @@ genoscape_rgba <- genoscapeRtools::qprob_rando_raster(
 # at this point, we must be explicit about adding a projection to the raster.
 # This adds the info for a regular lat-long projection
 crs(genoscape_rgba) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
+
+
+
 ```
 
 We can easily plot this with the function `layer_spatial` from the `ggspatial` package:
